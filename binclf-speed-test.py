@@ -8,6 +8,7 @@ Tested with python version `3.10.12` and environment in `requirements.txt`.
 Examples: 
 python binclf-speed-test.py --resolution 128 --num_images 100 --num_thresholds 1000 --seed 0 --algorithm numpy_numba --device cpu --mode perimg
 python binclf-speed-test.py --resolution 128 --num_images 100 --num_thresholds 1000 --seed 0 --algorithm numpy_itertools --device cpu --mode set
+python binclf-speed-test.py --resolution 128 --num_images 100 --num_thresholds 1000 --seed 0 --algorithm torchmetrics_unique_values --device cpu --mode set
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import scipy.stats
 import torch
 from numpy import ndarray
 from torch import Tensor
+from torch.nn import functional as F  # noqa: N812
 
 # # setup
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
@@ -276,6 +278,35 @@ def numpy_numba_parallel(scoremaps: ndarray, masks: ndarray, thresholds: ndarray
     return ret
 
 
+# # torchmetrics unique values
+
+def torchmetrics_unique_values(preds: Tensor, target: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    """
+    # copied from `torchmetrics.functional.classification.precision_recall_curve._binary_clf_curve`
+    # in version 1.1.0
+    # source permalink
+    # https://github.com/Lightning-AI/torchmetrics/blob/eda473f52cb9cf3ea2aa5079f04db0b34ac7f96b/src/torchmetrics/functional/classification/precision_recall_curve.py#L28
+    
+    simplifications:
+        - no option `sample_weights` ==> as if `sample_weights=None`
+        - assumed `pos_label=1`
+    """
+    with torch.no_grad():
+        # remove class dimension if necessary
+        if preds.ndim > target.ndim:
+            preds = preds[:, 0]
+        desc_score_indices = torch.argsort(preds, descending=True)
+        preds = preds[desc_score_indices]
+        target = target[desc_score_indices]
+        distinct_value_indices = torch.where(preds[1:] - preds[:-1])[0]
+        threshold_idxs = F.pad(distinct_value_indices, [0, 1], value=target.size(0) - 1)
+        target = (target == 1).to(torch.long)
+        # simpllified to torch.cumsum() instead of the adhoc version
+        tps = torch.cumsum(target * 1, dim=0)[threshold_idxs]
+        fps = 1 + threshold_idxs - tps
+        return fps, tps, preds[threshold_idxs]
+
+
 # # test function
 
 # ## validate args
@@ -339,7 +370,8 @@ ALGORITHMS = {
     "torchmetrics_vectorized": torchmetrics_vectorized,
     "numpy_itertools": numpy_itertools,
     "numpy_numba": numpy_numba,   
-    "numpy_numba_parallel": numpy_numba_parallel, 
+    "numpy_numba_parallel": numpy_numba_parallel,
+    "torchmetrics_unique_values": torchmetrics_unique_values,
 }
         
 
@@ -396,6 +428,14 @@ def perimg_binclf_curve(
             thresholds.cpu().numpy(),
         )).to(anomaly_score_maps.device)
         
+    if algorithm == "torchmetrics_unique_values":
+        # not necessary to return anything
+        [
+            algorithm_function(asmap, mask)
+            for asmap, mask in zip(anomaly_score_maps, masks)
+        ]
+        return
+    
     raise NotImplementedError(f"Algorithm `{algorithm}` not implemented.")
 
 
@@ -448,6 +488,10 @@ def set_binclf_curve(
             masks.flatten(0).cpu().numpy().astype(bool),
             thresholds.cpu().numpy(),
         )).to(anomaly_score_maps.device)
+    if algorithm == "torchmetrics_unique_values":
+        # not necessary to return anything
+        algorithm_function(anomaly_score_maps.flatten(0), masks.flatten(0))
+        return
         
     raise NotImplementedError(f"Algorithm `{algorithm}` not implemented.")
 
