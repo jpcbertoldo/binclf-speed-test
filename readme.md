@@ -24,3 +24,7 @@ python binclf-speed-test.py --resolution 128 --num_images 100 --num_thresholds 1
 ```bash
 python binclf-speed-test.py --resolution 128 --num_images 100 --num_thresholds 1000 --seed 0 --algorithm numpy_itertools --device cpu --mode perimg
 ```
+
+# next
+
+The test with `torchmetrics_unique_values` should include the step of harmonizing the curves under the same thresholds for the test to be fair.
