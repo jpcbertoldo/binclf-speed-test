@@ -193,7 +193,7 @@ def _numpy_itertools(scoremap: ndarray, mask: ndarray, thresholds: ndarray):
     return np.stack([
         np.stack([tns, fps], axis=-1),
         np.stack([fns, tps], axis=-1),
-    ], axis=-1)
+    ], axis=-1).transpose(0, 2, 1)
     
 
 numpy_itertools = np.vectorize(_numpy_itertools, signature="(n),(n),(k)->(k,2,2)")
@@ -242,7 +242,7 @@ def _numpy_numba(scoremap: ndarray, mask: ndarray, thresholds: ndarray):
         
         # same with the negatives 
         num_drop = 0
-        num_scores = len(scores_pos)
+        num_scores = len(scores_neg)
         while num_drop < num_scores and scores_neg[num_drop] < th:  # ! scores_neg !
             num_drop += 1
         # ---
@@ -258,7 +258,7 @@ def _numpy_numba(scoremap: ndarray, mask: ndarray, thresholds: ndarray):
     return np.stack((
         np.stack((tns, fps), axis=-1),
         np.stack((fns, tps), axis=-1),
-    ), axis=-1)
+    ), axis=-1).transpose(0, 2, 1)
 
 
 numpy_numba = np.vectorize(_numpy_numba, signature="(n),(n),(k)->(k,2,2)")
